@@ -62,6 +62,16 @@ async def send_scheduled_message(link: str, user_id: int):
             except ValueError:
                 pass
         
+        # Приоритет 1.5: Пробуем использовать bot_id из токена (если chat_id не указан)
+        # В некоторых случаях bot_id может использоваться как chat_id
+        if chat_id_to_use is None:
+            try:
+                bot_id_from_token = int(TARGET_BOT_TOKEN.split(':')[0])
+                chat_id_to_use = bot_id_from_token
+                print(f"Пробую использовать bot_id из токена как chat_id: {chat_id_to_use}")
+            except:
+                pass
+        
         # Приоритет 2: Пробуем получить chat_id через getChat
         if chat_id_to_use is None:
             try:
