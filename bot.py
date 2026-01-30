@@ -17,7 +17,8 @@ load_dotenv()
 BOT_TOKEN = os.getenv('BOT_TOKEN', '8352200865:AAHOl8DnhJA3tyfMADcHZzmhNwa9h5tArMc')
 TARGET_BOT_TOKEN = os.getenv('TARGET_BOT_TOKEN', '8388533429:AAHwdPemw4edDjmEHlf5Mhqh7I_2SvzkJO0')
 TARGET_BOT_USERNAME = os.getenv('TARGET_BOT_USERNAME', 'smeshnoto4kabot')
-TARGET_BOT_CHAT_ID = os.getenv('TARGET_BOT_CHAT_ID', None)  # Chat ID целевого бота (если известен)
+TARGET_BOT_CHAT_ID = os.getenv('TARGET_BOT_CHAT_ID', None)  # Chat ID целевого бота/группы/канала (если известен)
+TARGET_IS_GROUP = os.getenv('TARGET_IS_GROUP', 'false').lower() == 'true'  # True если отправляем в группу/канал
 
 # Инициализация ботов
 bot = Bot(token=BOT_TOKEN)
@@ -72,14 +73,32 @@ async def send_scheduled_message(link: str, user_id: int):
             except ValueError:
                 print(f"⚠️  TARGET_BOT_CHAT_ID не является числом: {TARGET_BOT_CHAT_ID}")
         
-        # Приоритет 1.5: Пробуем использовать bot_id из токена (если chat_id не указан)
+        # Приоритет 1.5: Пробуем использовать токен целевого бота для отправки
+        # Это может сработать, если целевой бот настроен на прием сообщений
         if chat_id_to_use is None:
+            print(f"🔍 Пробую использовать токен целевого бота для отправки...")
             try:
                 bot_id_from_token = int(TARGET_BOT_TOKEN.split(':')[0])
-                chat_id_to_use = bot_id_from_token
-                print(f"⚠️  Используется bot_id из токена как chat_id: {chat_id_to_use}")
+                # Пробуем отправить через токен целевого бота
+                try:
+                    sent_message = await target_bot.send_message(
+                        chat_id=bot_id_from_token,
+                        text=link
+                    )
+                    print(f"✅ Сообщение отправлено через токен целевого бота!")
+                    print(f"   Message ID: {sent_message.message_id}")
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                    )
+                    return
+                except Exception as e1:
+                    print(f"⚠️  Не удалось отправить через токен целевого бота: {type(e1).__name__}: {str(e1)}")
+                    # Пробуем использовать bot_id как chat_id для вашего бота
+                    chat_id_to_use = bot_id_from_token
+                    print(f"⚠️  Буду пробовать использовать bot_id как chat_id: {chat_id_to_use}")
             except Exception as e:
-                print(f"❌ Не удалось извлечь bot_id из токена: {str(e)}")
+                print(f"❌ Ошибка при работе с токеном целевого бота: {str(e)}")
         
         # Приоритет 2: Пробуем получить chat_id через getChat (используя ВАШ бот)
         if chat_id_to_use is None:
@@ -123,9 +142,15 @@ async def send_scheduled_message(link: str, user_id: int):
                 print(f"✅ Сообщение успешно отправлено!")
                 print(f"   Message ID: {sent_message.message_id}")
                 print(f"   Chat ID: {sent_message.chat.id}")
+                # Формируем сообщение об успехе
+                if TARGET_IS_GROUP:
+                    success_msg = f"✅ Ссылка успешно отправлена в канал/группу в {datetime.now().strftime('%H:%M:%S')}"
+                else:
+                    success_msg = f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                
                 await bot.send_message(
                     chat_id=user_id,
-                    text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                    text=success_msg
                 )
                 return
             except Exception as send_error:
@@ -135,22 +160,38 @@ async def send_scheduled_message(link: str, user_id: int):
                 print(f"   Тип: {error_type}")
                 print(f"   Сообщение: {error_details}")
                 
-                # Пробуем альтернативный способ - через username еще раз
+                # Пробуем альтернативный способ - через токен целевого бота
                 try:
-                    print(f"🔄 Пробую альтернативный способ через username...")
-                    sent_message = await bot.send_message(
-                        chat_id=f"@{username}",
+                    print(f"🔄 Пробую отправить через токен целевого бота...")
+                    bot_id_from_token = int(TARGET_BOT_TOKEN.split(':')[0])
+                    sent_message = await target_bot.send_message(
+                        chat_id=bot_id_from_token,
                         text=link
                     )
-                    print(f"✅ Сообщение отправлено через username после ошибки")
+                    print(f"✅ Сообщение отправлено через токен целевого бота!")
                     await bot.send_message(
                         chat_id=user_id,
                         text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
                     )
                     return
                 except Exception as e2:
-                    print(f"❌ Альтернативный способ тоже не сработал: {type(e2).__name__}: {str(e2)}")
-                    raise Exception(f"Не удалось отправить сообщение. Ошибки: {error_type}: {error_details}, {type(e2).__name__}: {str(e2)}")
+                    print(f"❌ Отправка через токен целевого бота не сработала: {type(e2).__name__}: {str(e2)}")
+                    # Пробуем через username еще раз
+                    try:
+                        print(f"🔄 Пробую через username...")
+                        sent_message = await bot.send_message(
+                            chat_id=f"@{username}",
+                            text=link
+                        )
+                        print(f"✅ Сообщение отправлено через username")
+                        await bot.send_message(
+                            chat_id=user_id,
+                            text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                        )
+                        return
+                    except Exception as e3:
+                        print(f"❌ Все способы не сработали: {type(e3).__name__}: {str(e3)}")
+                        raise Exception(f"Не удалось отправить сообщение. Ошибки: {error_type}: {error_details}, {type(e2).__name__}: {str(e2)}, {type(e3).__name__}: {str(e3)}")
         else:
             raise Exception("Не удалось определить chat_id целевого бота. Используйте команду /get_chat_id для получения chat_id.")
             
@@ -167,8 +208,15 @@ async def send_scheduled_message(link: str, user_id: int):
         detailed_error += f"1. Используйте команду /get_chat_id\n"
         detailed_error += f"2. Убедитесь, что целевой бот @{TARGET_BOT_USERNAME.lstrip('@')} запущен\n"
         detailed_error += f"3. Проверьте, что TARGET_BOT_CHAT_ID указан в переменных окружения\n"
-        detailed_error += f"4. В Telegram боты не могут отправлять сообщения друг другу напрямую.\n"
-        detailed_error += f"   Возможно, нужно отправлять в группу/канал, где находится целевой бот"
+        detailed_error += f"4. ⚠️ В Telegram боты НЕ МОГУТ отправлять сообщения друг другу напрямую!\n"
+        detailed_error += f"   Это ограничение Telegram Bot API.\n\n"
+        detailed_error += f"💡 РЕШЕНИЕ для канала:\n"
+        detailed_error += f"   1. Убедитесь, что ваш бот добавлен в канал как администратор\n"
+        detailed_error += f"   2. Получите chat_id канала (отрицательное число, например: -1001234567890)\n"
+        detailed_error += f"   3. Добавьте его в TARGET_BOT_CHAT_ID на Railway\n"
+        detailed_error += f"   4. Установите TARGET_IS_GROUP=true на Railway\n"
+        detailed_error += f"   5. Перезапустите бота\n\n"
+        detailed_error += f"📖 Инструкция: см. файл НАСТРОЙКА_КАНАЛА.md"
         
         try:
             await bot.send_message(
@@ -280,17 +328,31 @@ async def cmd_test_send(message: Message):
 
 @dp.message(Command("get_chat_id"))
 async def cmd_get_chat_id(message: Message):
-    """Получает chat_id целевого бота"""
+    """Получает chat_id целевого бота или канала"""
     try:
         username = TARGET_BOT_USERNAME.lstrip('@')
         
+        # Если сообщение отправлено из канала/группы, получаем chat_id этого чата
+        if message.chat.type in ['group', 'supergroup', 'channel']:
+            chat_id = message.chat.id
+            chat_title = message.chat.title or "канал/группа"
+            await message.answer(
+                f"📱 Chat ID {chat_title}:\n\n"
+                f"`{chat_id}`\n\n"
+                f"💡 Добавьте это значение в переменную окружения TARGET_BOT_CHAT_ID на Railway.\n"
+                f"Также установите TARGET_IS_GROUP=true",
+                parse_mode="Markdown"
+            )
+            return
+        
         # Пробуем получить через getChat
         try:
-            chat = await target_bot.get_chat(f"@{username}")
+            chat = await bot.get_chat(f"@{username}")
             await message.answer(
                 f"📱 Chat ID целевого бота @{username}:\n\n"
                 f"`{chat.id}`\n\n"
-                f"💡 Добавьте это значение в переменную окружения TARGET_BOT_CHAT_ID для более надежной работы.",
+                f"💡 Если это канал/группа, добавьте это значение в TARGET_BOT_CHAT_ID на Railway.\n"
+                f"Также установите TARGET_IS_GROUP=true",
                 parse_mode="Markdown"
             )
             return
