@@ -51,77 +51,94 @@ def parse_time(time_str: str) -> time:
 
 async def send_scheduled_message(link: str, user_id: int):
     """Отправляет ссылку в целевой бот"""
+    print(f"\n{'='*60}")
+    print(f"🔄 Попытка отправить ссылку: {link[:50]}...")
+    print(f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}")
+    print(f"{'='*60}")
+    
     try:
         username = TARGET_BOT_USERNAME.lstrip('@')
         chat_id_to_use = None
+        
+        print(f"📋 Параметры:")
+        print(f"   Целевой бот: @{username}")
+        print(f"   TARGET_BOT_CHAT_ID из env: {TARGET_BOT_CHAT_ID}")
         
         # Приоритет 1: Используем chat_id из переменной окружения, если он указан
         if TARGET_BOT_CHAT_ID:
             try:
                 chat_id_to_use = int(TARGET_BOT_CHAT_ID)
+                print(f"✅ Используется chat_id из переменной окружения: {chat_id_to_use}")
             except ValueError:
-                pass
+                print(f"⚠️  TARGET_BOT_CHAT_ID не является числом: {TARGET_BOT_CHAT_ID}")
         
         # Приоритет 1.5: Пробуем использовать bot_id из токена (если chat_id не указан)
-        # В некоторых случаях bot_id может использоваться как chat_id
         if chat_id_to_use is None:
             try:
                 bot_id_from_token = int(TARGET_BOT_TOKEN.split(':')[0])
                 chat_id_to_use = bot_id_from_token
-                print(f"Пробую использовать bot_id из токена как chat_id: {chat_id_to_use}")
-            except:
-                pass
-        
-        # Приоритет 2: Пробуем получить chat_id через getChat
-        if chat_id_to_use is None:
-            try:
-                chat = await target_bot.get_chat(f"@{username}")
-                chat_id_to_use = chat.id
-                print(f"Получен chat_id целевого бота: {chat_id_to_use}")
+                print(f"⚠️  Используется bot_id из токена как chat_id: {chat_id_to_use}")
             except Exception as e:
-                print(f"Не удалось получить chat_id через getChat: {str(e)}")
+                print(f"❌ Не удалось извлечь bot_id из токена: {str(e)}")
         
-        # Приоритет 3: Пробуем отправить по username (может не работать для ботов)
+        # Приоритет 2: Пробуем получить chat_id через getChat (используя ВАШ бот)
         if chat_id_to_use is None:
-            # Пробуем разные варианты username
+            print(f"🔍 Пробую получить chat_id через getChat...")
+            try:
+                chat = await bot.get_chat(f"@{username}")
+                chat_id_to_use = chat.id
+                print(f"✅ Получен chat_id через getChat: {chat_id_to_use}")
+            except Exception as e:
+                print(f"❌ Не удалось получить chat_id через getChat: {type(e).__name__}: {str(e)}")
+        
+        # Приоритет 3: Пробуем отправить по username (используя ВАШ бот)
+        if chat_id_to_use is None:
+            print(f"🔍 Пробую отправить по username...")
             for chat_id_variant in [f"@{username}", username]:
                 try:
-                    await target_bot.send_message(
+                    print(f"   Пробую: {chat_id_variant}")
+                    sent_message = await bot.send_message(
                         chat_id=chat_id_variant,
                         text=link
                     )
-                    print(f"Сообщение отправлено по username: {chat_id_variant}")
+                    print(f"✅ Сообщение отправлено по username: {chat_id_variant}")
+                    print(f"   Chat ID ответа: {sent_message.chat.id}")
                     await bot.send_message(
                         chat_id=user_id,
                         text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
                     )
                     return
                 except Exception as e:
-                    print(f"Ошибка отправки по {chat_id_variant}: {str(e)}")
+                    print(f"❌ Ошибка отправки по {chat_id_variant}: {type(e).__name__}: {str(e)}")
                     continue
         
-        # Если есть chat_id, используем его
+        # Если есть chat_id, используем его (используя ВАШ бот)
         if chat_id_to_use:
-            print(f"Попытка отправки сообщения в chat_id: {chat_id_to_use}")
+            print(f"📤 Отправка сообщения в chat_id: {chat_id_to_use}")
             try:
-                sent_message = await target_bot.send_message(
+                sent_message = await bot.send_message(
                     chat_id=chat_id_to_use,
                     text=link
                 )
-                print(f"✅ Сообщение успешно отправлено! Message ID: {sent_message.message_id}")
+                print(f"✅ Сообщение успешно отправлено!")
+                print(f"   Message ID: {sent_message.message_id}")
+                print(f"   Chat ID: {sent_message.chat.id}")
                 await bot.send_message(
                     chat_id=user_id,
                     text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
                 )
+                return
             except Exception as send_error:
+                error_type = type(send_error).__name__
                 error_details = str(send_error)
-                print(f"❌ Ошибка отправки в chat_id {chat_id_to_use}: {error_details}")
+                print(f"❌ Ошибка отправки в chat_id {chat_id_to_use}:")
+                print(f"   Тип: {error_type}")
+                print(f"   Сообщение: {error_details}")
                 
-                # Пробуем альтернативный способ - через ваш бот отправить сообщение
-                # (если целевой бот находится в группе/канале)
+                # Пробуем альтернативный способ - через username еще раз
                 try:
-                    # Пробуем отправить через username еще раз
-                    await target_bot.send_message(
+                    print(f"🔄 Пробую альтернативный способ через username...")
+                    sent_message = await bot.send_message(
                         chat_id=f"@{username}",
                         text=link
                     )
@@ -130,8 +147,10 @@ async def send_scheduled_message(link: str, user_id: int):
                         chat_id=user_id,
                         text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
                     )
+                    return
                 except Exception as e2:
-                    raise Exception(f"Не удалось отправить сообщение. Ошибки: {error_details}, {str(e2)}")
+                    print(f"❌ Альтернативный способ тоже не сработал: {type(e2).__name__}: {str(e2)}")
+                    raise Exception(f"Не удалось отправить сообщение. Ошибки: {error_type}: {error_details}, {type(e2).__name__}: {str(e2)}")
         else:
             raise Exception("Не удалось определить chat_id целевого бота. Используйте команду /get_chat_id для получения chat_id.")
             
@@ -181,12 +200,20 @@ async def schedule_checker():
             # Отправляем сообщения
             for msg_id, data in messages_to_send:
                 try:
+                    print(f"\n⏰ Время отправки наступило: {current_time.strftime('%H:%M')}")
+                    print(f"📨 Отправляю сообщение ID {msg_id}")
                     await send_scheduled_message(data['link'], data['user_id'])
                     del scheduled_messages[msg_id]
-                    print(f"Отправлено сообщение в {current_time.strftime('%H:%M')}: {data['link'][:50]}...")
+                    print(f"✅ Успешно удалено из расписания: {msg_id}")
                 except Exception as e:
-                    print(f"Ошибка при отправке сообщения {msg_id}: {str(e)}")
+                    error_type = type(e).__name__
+                    print(f"❌ ОШИБКА при отправке сообщения {msg_id}:")
+                    print(f"   Тип: {error_type}")
+                    print(f"   Сообщение: {str(e)}")
                     # Не удаляем сообщение при ошибке, чтобы можно было повторить попытку
+                    # Но помечаем, что была попытка отправки
+                    data['last_error'] = str(e)
+                    data['error_count'] = data.get('error_count', 0) + 1
             
             # Ждем 1 секунду перед следующей проверкой
             await asyncio.sleep(1)
@@ -238,6 +265,17 @@ async def cmd_list(message: Message):
         text += f"⏰ Время: {data['time'].strftime('%H:%M')}\n\n"
     
     await message.answer(text)
+
+
+@dp.message(Command("test_send"))
+async def cmd_test_send(message: Message):
+    """Тестирует отправку сообщения целевому боту"""
+    test_link = "https://test.example.com"
+    await message.answer("🧪 Тестирую отправку сообщения...")
+    try:
+        await send_scheduled_message(test_link, message.from_user.id)
+    except Exception as e:
+        await message.answer(f"❌ Тест не прошел: {str(e)}\n\nПроверьте логи на Railway для деталей.")
 
 
 @dp.message(Command("get_chat_id"))
