@@ -102,29 +102,62 @@ async def send_scheduled_message(link: str, user_id: int):
         
         # Если есть chat_id, используем его
         if chat_id_to_use:
-            await target_bot.send_message(
-                chat_id=chat_id_to_use,
-                text=link
-            )
-            print(f"Сообщение отправлено по chat_id: {chat_id_to_use}")
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
-            )
+            print(f"Попытка отправки сообщения в chat_id: {chat_id_to_use}")
+            try:
+                sent_message = await target_bot.send_message(
+                    chat_id=chat_id_to_use,
+                    text=link
+                )
+                print(f"✅ Сообщение успешно отправлено! Message ID: {sent_message.message_id}")
+                await bot.send_message(
+                    chat_id=user_id,
+                    text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                )
+            except Exception as send_error:
+                error_details = str(send_error)
+                print(f"❌ Ошибка отправки в chat_id {chat_id_to_use}: {error_details}")
+                
+                # Пробуем альтернативный способ - через ваш бот отправить сообщение
+                # (если целевой бот находится в группе/канале)
+                try:
+                    # Пробуем отправить через username еще раз
+                    await target_bot.send_message(
+                        chat_id=f"@{username}",
+                        text=link
+                    )
+                    print(f"✅ Сообщение отправлено через username после ошибки")
+                    await bot.send_message(
+                        chat_id=user_id,
+                        text=f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
+                    )
+                except Exception as e2:
+                    raise Exception(f"Не удалось отправить сообщение. Ошибки: {error_details}, {str(e2)}")
         else:
             raise Exception("Не удалось определить chat_id целевого бота. Используйте команду /get_chat_id для получения chat_id.")
             
     except Exception as e:
         error_msg = str(e)
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"❌ Ошибка при отправке ссылки: {error_msg}\n\n"
-                 f"💡 Попробуйте:\n"
-                 f"1. Использовать команду /get_chat_id для получения chat_id\n"
-                 f"2. Убедитесь, что целевой бот @{TARGET_BOT_USERNAME.lstrip('@')} запущен\n"
-                 f"3. Убедитесь, что целевой бот начал диалог с вашим ботом"
-        )
-        print(f"Ошибка отправки: {error_msg}")  # Логирование для отладки
+        error_type = type(e).__name__
+        print(f"❌ КРИТИЧЕСКАЯ ОШИБКА отправки: {error_type}: {error_msg}")
+        
+        # Детальная информация об ошибке
+        detailed_error = f"❌ Ошибка при отправке ссылки:\n\n"
+        detailed_error += f"Тип: {error_type}\n"
+        detailed_error += f"Сообщение: {error_msg}\n\n"
+        detailed_error += f"💡 Возможные решения:\n"
+        detailed_error += f"1. Используйте команду /get_chat_id\n"
+        detailed_error += f"2. Убедитесь, что целевой бот @{TARGET_BOT_USERNAME.lstrip('@')} запущен\n"
+        detailed_error += f"3. Проверьте, что TARGET_BOT_CHAT_ID указан в переменных окружения\n"
+        detailed_error += f"4. В Telegram боты не могут отправлять сообщения друг другу напрямую.\n"
+        detailed_error += f"   Возможно, нужно отправлять в группу/канал, где находится целевой бот"
+        
+        try:
+            await bot.send_message(
+                chat_id=user_id,
+                text=detailed_error
+            )
+        except:
+            print(f"Не удалось отправить сообщение об ошибке пользователю")
 
 
 async def schedule_checker():
@@ -341,9 +374,21 @@ async def main():
     # Запускаем проверку расписания в фоне
     asyncio.create_task(schedule_checker())
     
-    # Запускаем бота
+    # Запускаем бота с обработкой ошибок
     print("🤖 Бот запущен...")
-    await dp.start_polling(bot)
+    try:
+        # Очищаем предыдущие обновления перед запуском
+        try:
+            await bot.delete_webhook(drop_pending_updates=True)
+            print("✅ Предыдущие обновления очищены")
+        except Exception as e:
+            print(f"⚠️  Не удалось очистить обновления: {str(e)}")
+        
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    except Exception as e:
+        print(f"❌ Критическая ошибка: {str(e)}")
+        print("💡 Убедитесь, что бот не запущен в другом месте")
+        raise
 
 
 if __name__ == "__main__":
