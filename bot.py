@@ -202,19 +202,64 @@ async def cmd_get_chat_id(message: Message):
     """Получает chat_id целевого бота"""
     try:
         username = TARGET_BOT_USERNAME.lstrip('@')
-        chat = await target_bot.get_chat(f"@{username}")
+        
+        # Пробуем получить через getChat
+        try:
+            chat = await target_bot.get_chat(f"@{username}")
+            await message.answer(
+                f"📱 Chat ID целевого бота @{username}:\n\n"
+                f"`{chat.id}`\n\n"
+                f"💡 Добавьте это значение в переменную окружения TARGET_BOT_CHAT_ID для более надежной работы.",
+                parse_mode="Markdown"
+            )
+            return
+        except Exception as e1:
+            pass
+        
+        # Пробуем получить через getUpdates
+        try:
+            import requests
+            url = f"https://api.telegram.org/bot{TARGET_BOT_TOKEN}/getUpdates"
+            response = requests.get(url, timeout=5)
+            data = response.json()
+            
+            if data.get('ok') and data.get('result'):
+                updates = data['result']
+                chat_ids = set()
+                
+                for update in updates:
+                    if 'message' in update:
+                        chat = update['message'].get('chat', {})
+                        if 'id' in chat:
+                            chat_ids.add(chat['id'])
+                
+                if chat_ids:
+                    chat_id = list(chat_ids)[0]
+                    await message.answer(
+                        f"📱 Chat ID найден через getUpdates:\n\n"
+                        f"`{chat_id}`\n\n"
+                        f"💡 Добавьте это значение в переменную окружения TARGET_BOT_CHAT_ID.",
+                        parse_mode="Markdown"
+                    )
+                    return
+        except Exception as e2:
+            pass
+        
+        # Если ничего не получилось
         await message.answer(
-            f"📱 Chat ID целевого бота @{username}:\n\n"
-            f"`{chat.id}`\n\n"
-            f"💡 Добавьте это значение в переменную окружения TARGET_BOT_CHAT_ID для более надежной работы.",
-            parse_mode="Markdown"
+            f"❌ Не удалось автоматически получить chat_id.\n\n"
+            f"📖 Инструкция:\n\n"
+            f"1. Откройте Telegram\n"
+            f"2. Найдите бота @{username}\n"
+            f"3. Отправьте ему команду /start\n"
+            f"4. Запустите скрипт: python get_chat_id_from_updates.py\n"
+            f"5. Или используйте бота @RawDataBot для получения chat_id\n\n"
+            f"📄 Подробная инструкция в файле: КАК_ПОЛУЧИТЬ_CHAT_ID.txt"
         )
     except Exception as e:
         await message.answer(
-            f"❌ Не удалось получить chat_id: {str(e)}\n\n"
-            f"💡 Убедитесь, что:\n"
-            f"1. Целевой бот @{TARGET_BOT_USERNAME.lstrip('@')} существует\n"
-            f"2. Целевой бот начал диалог с вашим ботом (отправьте /start целевому боту от имени вашего бота)"
+            f"❌ Ошибка: {str(e)}\n\n"
+            f"📖 Смотрите инструкцию в файле КАК_ПОЛУЧИТЬ_CHAT_ID.txt"
         )
 
 
