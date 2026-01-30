@@ -51,7 +51,7 @@ def parse_time(time_str: str) -> time:
 
 
 async def send_scheduled_message(link: str, user_id: int):
-    """Отправляет ссылку в целевой бот"""
+    """Отправляет ссылку в целевой бот (через канал, если оба бота в канале)"""
     print(f"\n{'='*60}")
     print(f"🔄 Попытка отправить ссылку: {link[:50]}...")
     print(f"⏰ Время: {datetime.now().strftime('%H:%M:%S')}")
@@ -64,6 +64,7 @@ async def send_scheduled_message(link: str, user_id: int):
         print(f"📋 Параметры:")
         print(f"   Целевой бот: @{username}")
         print(f"   TARGET_BOT_CHAT_ID из env: {TARGET_BOT_CHAT_ID}")
+        print(f"   TARGET_IS_GROUP: {TARGET_IS_GROUP}")
         
         # Приоритет 1: Используем chat_id из переменной окружения, если он указан
         if TARGET_BOT_CHAT_ID:
@@ -143,8 +144,10 @@ async def send_scheduled_message(link: str, user_id: int):
                 print(f"   Message ID: {sent_message.message_id}")
                 print(f"   Chat ID: {sent_message.chat.id}")
                 # Формируем сообщение об успехе
-                if TARGET_IS_GROUP:
-                    success_msg = f"✅ Ссылка успешно отправлена в канал/группу в {datetime.now().strftime('%H:%M:%S')}"
+                # Если chat_id отрицательный - это канал/группа
+                is_channel = chat_id_to_use < 0 or TARGET_IS_GROUP
+                if is_channel:
+                    success_msg = f"✅ Ссылка успешно отправлена в канал (где находится @{username}) в {datetime.now().strftime('%H:%M:%S')}"
                 else:
                     success_msg = f"✅ Ссылка успешно отправлена в @{username} в {datetime.now().strftime('%H:%M:%S')}"
                 
